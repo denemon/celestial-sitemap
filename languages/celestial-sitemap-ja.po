@@ -3,7 +3,7 @@
 # This file is distributed under the same license as the plugin.
 msgid ""
 msgstr ""
-"Project-Id-Version: Celestial Sitemap 3.5.1\n"
+"Project-Id-Version: Celestial Sitemap 3.6.0\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-03-11 00:00+0900\n"
 "PO-Revision-Date: 2026-03-11 00:00+0900\n"
@@ -393,3 +393,62 @@ msgstr "307 — 一時的（メソッド維持）"
 
 msgid "308 — Permanent (method preserved)"
 msgstr "308 — 恒久的（メソッド維持）"
+
+# ── robots.txt Editor ─────────────────────────────────────────
+
+msgid "robots.txt"
+msgstr "robots.txt"
+
+msgid "Celestial Sitemap — robots.txt Editor"
+msgstr "Celestial Sitemap — robots.txt エディター"
+
+msgid "Physical robots.txt detected"
+msgstr "物理 robots.txt ファイルを検出"
+
+msgid "A physical robots.txt file exists at %s. WordPress (and this editor) cannot override a physical file. Delete or rename the file to use this editor."
+msgstr "物理 robots.txt ファイルが %s に存在します。WordPress（およびこのエディター）は物理ファイルを上書きできません。このエディターを使用するには、ファイルを削除または名前変更してください。"
+
+msgid "The following plugins may also modify robots.txt output: %s. This could cause conflicts with your custom content."
+msgstr "以下のプラグインも robots.txt の出力を変更する可能性があります: %s。カスタム内容と競合する場合があります。"
+
+msgid "Custom robots.txt"
+msgstr "カスタム robots.txt"
+
+msgid "When enabled, this content replaces the WordPress-generated robots.txt. The sitemap URL is automatically appended if not already present."
+msgstr "有効にすると、WordPress が生成する robots.txt をこの内容で置き換えます。サイトマップ URL が含まれていない場合は自動的に追記されます。"
+
+msgid "Enable Custom robots.txt"
+msgstr "カスタム robots.txt を有効化"
+
+msgid "Use custom robots.txt content instead of WordPress default"
+msgstr "WordPress 標準の代わりにカスタム robots.txt を使用する"
+
+msgid "Content"
+msgstr "内容"
+
+msgid "Maximum %d KB. One directive per line. The sitemap URL (%s) is appended automatically if not included."
+msgstr "最大 %d KB。1行に1つのディレクティブを記述してください。サイトマップ URL（%s）が含まれていない場合は自動で追記されます。"
+
+msgid "Preview"
+msgstr "プレビュー"
+
+msgid "View Current robots.txt"
+msgstr "現在の robots.txt を表示"
+
+msgid "Opens the live robots.txt output in a new tab. Save changes first to see updates."
+msgstr "現在の robots.txt 出力を新しいタブで開きます。変更を反映するには先に保存してください。"
+
+msgid "Save robots.txt Settings"
+msgstr "robots.txt 設定を保存"
+
+msgid "robots.txt settings saved."
+msgstr "robots.txt 設定を保存しました。"
+
+msgid "robots.txt content exceeds the maximum size of %d KB."
+msgstr "robots.txt の内容が最大サイズ %d KB を超えています。"
+
+msgid "Your robots.txt does not contain \"Disallow: /wp-admin/\". Search engines may crawl your admin area."
+msgstr "robots.txt に「Disallow: /wp-admin/」が含まれていません。検索エンジンが管理画面をクロールする可能性があります。"
+
+msgid "Your robots.txt does not contain a \"User-agent:\" directive. It may not function as expected."
+msgstr "robots.txt に「User-agent:」ディレクティブが含まれていません。正しく機能しない可能性があります。"

@@ -39,6 +39,7 @@ final class AdminController
         add_action('wp_ajax_cel_delete_404', [$this, 'ajaxDelete404']);
         add_action('wp_ajax_cel_clear_404', [$this, 'ajaxClear404']);
         add_action('wp_ajax_cel_flush_sitemap', [$this, 'ajaxFlushSitemap']);
+        add_action('wp_ajax_cel_save_robots_txt', [$this, 'ajaxSaveRobotsTxt']);
     }
 
     // ── Menu ─────────────────────────────────────────────────────────
@@ -58,13 +59,14 @@ final class AdminController
         add_submenu_page('cel-dashboard', __('General Settings', 'celestial-sitemap'), __('Settings', 'celestial-sitemap'), 'manage_options', 'cel-dashboard', [$this, 'renderDashboard']);
         add_submenu_page('cel-dashboard', __('Redirects', 'celestial-sitemap'), __('Redirects', 'celestial-sitemap'), 'manage_options', 'cel-redirects', [$this, 'renderRedirects']);
         add_submenu_page('cel-dashboard', __('404 Log', 'celestial-sitemap'), __('404 Log', 'celestial-sitemap'), 'manage_options', 'cel-404-log', [$this, 'render404Log']);
+        add_submenu_page('cel-dashboard', __('robots.txt', 'celestial-sitemap'), __('robots.txt', 'celestial-sitemap'), 'manage_options', 'cel-robots-txt', [$this, 'renderRobotsTxt']);
     }
 
     // ── Assets ───────────────────────────────────────────────────────
 
     public function enqueueAssets(string $hook): void
     {
-        $adminPages = ['toplevel_page_cel-dashboard', 'celestial-sitemap_page_cel-redirects', 'celestial-sitemap_page_cel-404-log'];
+        $adminPages = ['toplevel_page_cel-dashboard', 'celestial-sitemap_page_cel-redirects', 'celestial-sitemap_page_cel-404-log', 'celestial-sitemap_page_cel-robots-txt'];
 
         $needsCss = in_array($hook, $adminPages, true)
             || $hook === 'post.php'
@@ -128,6 +130,118 @@ final class AdminController
         $entries     = NotFoundLogger::getAll($perPage, $offset);
         $pageUrl     = admin_url('admin.php?page=cel-404-log');
         require CEL_DIR . 'templates/admin/404-log.php';
+    }
+
+    public function renderRobotsTxt(): void
+    {
+        if (! current_user_can('manage_options')) {
+            wp_die(esc_html__('Unauthorized', 'celestial-sitemap'));
+        }
+        $opts = $this->opts;
+
+        // Detect physical robots.txt file
+        $physicalFileExists = defined('ABSPATH') && is_file(ABSPATH . 'robots.txt');
+
+        // Detect competing plugins that hook into robots_txt
+        $competingPlugins = $this->detectRobotsTxtConflicts();
+
+        require CEL_DIR . 'templates/admin/robots-txt.php';
+    }
+
+    /**
+     * Detect other plugins that filter robots_txt.
+     *
+     * @return string[] Names of competing plugins.
+     */
+    private function detectRobotsTxtConflicts(): array
+    {
+        $conflicts = [];
+
+        if (defined('WPSEO_VERSION')) {
+            $conflicts[] = 'Yoast SEO';
+        }
+        if (defined('RANK_MATH_VERSION')) {
+            $conflicts[] = 'Rank Math';
+        }
+        if (defined('AIOSEO_VERSION')) {
+            $conflicts[] = 'All in One SEO';
+        }
+        if (defined('SEOPRESS_VERSION')) {
+            $conflicts[] = 'SEOPress';
+        }
+
+        return $conflicts;
+    }
+
+    // ── AJAX: robots.txt ─────────────────────────────────────────────
+
+    /** Maximum allowed size for robots.txt content (64 KB). */
+    private const ROBOTS_TXT_MAX_BYTES = 65536;
+
+    public function ajaxSaveRobotsTxt(): void
+    {
+        check_ajax_referer('cel_admin_nonce');
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Unauthorized'], 403);
+        }
+
+        // Content — sanitize and validate (saved BEFORE enabled toggle
+        // so that a mid-request failure never leaves enabled=true with stale content)
+        $raw = isset($_POST['cel_robots_txt_content'])
+            ? wp_unslash($_POST['cel_robots_txt_content'])
+            : '';
+
+        // Remove null bytes
+        $raw = str_replace("\0", '', (string) $raw);
+
+        // Normalize line endings to LF
+        $raw = str_replace(["\r\n", "\r"], "\n", $raw);
+
+        // Sanitize: strip HTML/PHP tags but preserve robots.txt directives
+        $content = sanitize_textarea_field($raw);
+
+        // Size limit check
+        if (strlen($content) > self::ROBOTS_TXT_MAX_BYTES) {
+            wp_send_json_error([
+                'message' => sprintf(
+                    /* translators: %d: maximum allowed kilobytes */
+                    __('robots.txt content exceeds the maximum size of %d KB.', 'celestial-sitemap'),
+                    (int) (self::ROBOTS_TXT_MAX_BYTES / 1024)
+                ),
+            ]);
+            return;
+        }
+
+        $this->opts->set('cel_robots_txt_content', $content);
+
+        // Enabled toggle — saved AFTER content to ensure content is always
+        // up-to-date when the feature becomes active
+        $enabled = isset($_POST['cel_robots_txt_enabled']) ? 1 : 0;
+        $this->opts->set('cel_robots_txt_enabled', $enabled);
+
+        $this->opts->invalidateCache();
+
+        // Build warnings
+        $warnings = [];
+
+        if ($enabled && $content !== '') {
+            // Warn if Disallow: /wp-admin/ is missing
+            if (stripos($content, 'disallow: /wp-admin') === false) {
+                $warnings[] = __('Your robots.txt does not contain "Disallow: /wp-admin/". Search engines may crawl your admin area.', 'celestial-sitemap');
+            }
+
+            // Warn if no User-agent directive
+            if (stripos($content, 'user-agent:') === false) {
+                $warnings[] = __('Your robots.txt does not contain a "User-agent:" directive. It may not function as expected.', 'celestial-sitemap');
+            }
+        }
+
+        $response = ['message' => __('robots.txt settings saved.', 'celestial-sitemap')];
+        if ($warnings !== []) {
+            $response['warnings'] = $warnings;
+        }
+
+        wp_send_json_success($response);
     }
 
     // ── Meta box ─────────────────────────────────────────────────────

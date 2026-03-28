@@ -1,4 +1,4 @@
-# Celestial Sitemap v3.5.2
+# Celestial Sitemap v3.6.0
 
 Enterprise-grade WordPress SEO plugin.
 
@@ -22,7 +22,7 @@ celestial-sitemap/
 │   ├── SEO/
 │   │   ├── HeadManager.php        # Title, meta description, OGP
 │   │   ├── CanonicalManager.php   # Canonical URL, prev/next, paginated archives
-│   │   └── RobotsManager.php      # noindex rules, robots.txt
+│   │   └── RobotsManager.php      # noindex rules, robots.txt, custom robots.txt editor
 │   ├── Schema/
 │   │   └── SchemaManager.php      # Article, WebPage (all CPTs), BreadcrumbList, Organization
 │   ├── Sitemap/
@@ -33,7 +33,8 @@ celestial-sitemap/
 │   ├── admin/
 │   │   ├── dashboard.php          # Settings page
 │   │   ├── redirects.php          # Redirect management
-│   │   └── 404-log.php            # 404 log viewer
+│   │   ├── 404-log.php            # 404 log viewer
+│   │   └── robots-txt.php         # robots.txt editor
 │   └── sitemap-xsl.php            # XSLT 1.0 stylesheet
 ├── assets/
 │   ├── css/admin.css
@@ -88,6 +89,7 @@ HeadManager orchestrates CanonicalManager and SchemaManager — they no longer h
 | `created_term`              | `SitemapRouter::invalidateAll`      | 10       |
 | `edited_term`               | `SitemapRouter::invalidateAll`      | 10       |
 | `delete_term`               | `SitemapRouter::invalidateAll`      | 10       |
+| `wp_ajax_cel_save_robots_txt` | `AdminController::ajaxSaveRobotsTxt` | 10    |
 | `admin_menu`                | `AdminController::registerMenu`     | 10       |
 | `admin_enqueue_scripts`     | `AdminController::enqueueAssets`    | 10       |
 | `admin_notices`             | `ConflictDetector::maybeShowNotice` | 10       |
@@ -98,7 +100,7 @@ HeadManager orchestrates CanonicalManager and SchemaManager — they no longer h
 | `created_{$taxonomy}`       | `TaxonomyFields::saveFields`        | 10       |
 | `edited_{$taxonomy}`        | `TaxonomyFields::saveFields`        | 10       |
 
-Total: 29 hook registrations.
+Total: 30 hook registrations.
 
 **Unified head builder flow:**
 1. `HeadManager::collect()` at `template_redirect` (priority 10) — resolves description, canonical, OGP, schema in a single pass
@@ -162,7 +164,7 @@ add_filter('cel_canonical_url', function (string $url): string {
 - `{prefix}cel_404_log` — 404 error log (deduped by URL)
 
 **Options:**
-- `cel_*` — all prefixed, ~24 options
+- `cel_*` — all prefixed, ~26 options
 - Frequently-read options (title, noindex, schema, OGP flags) are `autoload=true`
 - Infrequently-read options (GSC credentials, sitemap lists) are `autoload=false`
 - All options are bulk-loaded in a single query on first access via `Options::loadAll()`
@@ -278,6 +280,32 @@ The full schema array can be further customized via `cel_schema_webpage`.
 15. **WP core sitemaps disabled** — prevents duplicate sitemap systems
 
 ## Changelog
+
+### 3.6.0
+
+**New Feature — robots.txt Editor:**
+- **Custom robots.txt editor** — Admin UI (Celestial Sitemap → robots.txt) for editing the virtual robots.txt output via WordPress `robots_txt` filter. When enabled, replaces the WordPress-generated content with user-defined directives. The plugin's sitemap URL is auto-appended if not already present in the custom content (`RobotsManager.php`, `AdminController.php`, `templates/admin/robots-txt.php`)
+- **Input validation & sanitization** — Null byte removal, CRLF→LF normalization, `sanitize_textarea_field`, 64 KB size limit. Content is saved before the enabled toggle to prevent mid-request inconsistency (`AdminController.php`)
+- **Soft warnings on save** — Non-blocking warnings when custom content is missing `User-agent:` or `Disallow: /wp-admin/` directives (`AdminController.php`)
+- **Physical file detection** — Warns when a physical `robots.txt` file exists at `ABSPATH`, which would override the virtual output (`AdminController.php`, `templates/admin/robots-txt.php`)
+- **Competing plugin detection** — robots.txt page shows a warning if Yoast SEO, Rank Math, All in One SEO, or SEOPress are active, as they may also modify `robots_txt` filter output (`AdminController.php`)
+- **State transitions** — `enabled=false` or empty content falls back to WordPress default + sitemap URL append. Plugin deactivation removes the filter (via `boot()` not being called). Plugin deletion removes both options via existing `cel_%` wildcard cleanup (`RobotsManager.php`, `uninstall.php`)
+
+**New Options:**
+- `cel_robots_txt_enabled` (bool, default: 0) — enable/disable custom robots.txt
+- `cel_robots_txt_content` (text, default: '') — custom robots.txt content
+
+**Files Added:**
+- `templates/admin/robots-txt.php` — robots.txt editor UI with physical file warning, conflict detection, preview link
+
+**Files Modified:**
+- `celestial-sitemap.php` — version bump to 3.6.0
+- `includes/Core/Options.php` — `ALLOWED_KEYS` + `robotsTxtEnabled()`, `robotsTxtContent()` getters
+- `includes/Core/Activator.php` — default options for `cel_robots_txt_enabled`, `cel_robots_txt_content`
+- `includes/SEO/RobotsManager.php` — `filterRobotsTxt()` extended to serve custom content when enabled
+- `includes/Admin/AdminController.php` — `cel-robots-txt` submenu, `renderRobotsTxt()`, `detectRobotsTxtConflicts()`, `ajaxSaveRobotsTxt()` with security checks and validation
+- `assets/js/admin.js` — robots.txt form handler with warning display, `showMessage` selector updated
+- `assets/css/admin.css` — `.cel-robots-textarea` monospace styling
 
 ### 3.5.2
 

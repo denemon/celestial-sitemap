@@ -56,6 +56,8 @@ final class Options
         'cel_indexnow_key',
         'cel_fb_app_id',
         'cel_twitter_site',
+        'cel_robots_txt_enabled',
+        'cel_robots_txt_content',
     ];
 
     // ── Bulk loader ─────────────────────────────────────────────────
@@ -133,6 +135,17 @@ final class Options
     public function noindexSearch(): bool
     {
         return (bool) $this->get('cel_noindex_search', true);
+    }
+
+    // ── Robots.txt ──────────────────────────────────────────────────
+    public function robotsTxtEnabled(): bool
+    {
+        return (bool) $this->get('cel_robots_txt_enabled', false);
+    }
+
+    public function robotsTxtContent(): string
+    {
+        return (string) $this->get('cel_robots_txt_content', '');
     }
 
     // ── Sitemap ──────────────────────────────────────────────────────

@@ -12,7 +12,7 @@
      * Looks for the first visible cel notice container.
      */
     function showMessage(text, type) {
-        var $notice = $('#cel-settings-notice, #cel-redirect-notice, #cel-404-notice').first();
+        var $notice = $('#cel-settings-notice, #cel-redirect-notice, #cel-404-notice, #cel-robots-notice').first();
         if (!$notice.length) return;
         $notice
             .removeClass('notice-success notice-error hidden')
@@ -53,6 +53,49 @@
         // The server-side (AdminController::ajaxSaveSettings) already handles
         // absent checkbox keys as 0, so serialize() is correct here.
         ajax('cel_save_settings', $(this).serialize());
+    });
+
+    // ── Save robots.txt ─────────────────────────────────────────────
+    $('#cel-robots-txt-form').on('submit', function (e) {
+        e.preventDefault();
+        var $notice = $('#cel-robots-notice');
+        var data = $(this).serialize();
+        data += '&action=cel_save_robots_txt';
+        data += '&_ajax_nonce=' + encodeURIComponent(celAdmin.nonce);
+
+        $.post(celAdmin.ajaxUrl, data, function (res) {
+            if (res.success) {
+                // Show warnings if any
+                var msg = res.data.message || 'Done.';
+                if (res.data.warnings && res.data.warnings.length) {
+                    msg += '\n\n' + res.data.warnings.join('\n');
+                }
+                $notice
+                    .removeClass('notice-success notice-error notice-warning hidden')
+                    .addClass(res.data.warnings && res.data.warnings.length ? 'notice-warning' : 'notice-success')
+                    .empty();
+                // Use <p> for each line
+                $.each(msg.split('\n\n'), function (_, line) {
+                    if ($.trim(line)) {
+                        $notice.append($('<p>').text(line));
+                    }
+                });
+                $notice.show();
+                setTimeout(function () { $notice.fadeOut(); }, 6000);
+            } else {
+                $notice
+                    .removeClass('notice-success notice-error notice-warning hidden')
+                    .addClass('notice-error')
+                    .empty().append($('<p>').text(res.data.message || 'Error.'))
+                    .show();
+            }
+        }).fail(function () {
+            $notice
+                .removeClass('notice-success notice-error notice-warning hidden')
+                .addClass('notice-error')
+                .empty().append($('<p>').text('Request failed.'))
+                .show();
+        });
     });
 
     // ── Flush sitemap ────────────────────────────────────────────────

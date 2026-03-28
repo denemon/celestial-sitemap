@@ -55,6 +55,16 @@
     margin: 12px 0;
 }
 
+/* robots.txt editor */
+.cel-robots-textarea {
+    font-family: Consolas, Monaco, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    tab-size: 4;
+    resize: vertical;
+    min-height: 200px;
+}
+
 /* Pagination */
 .cel-pagination {
     display: flex;

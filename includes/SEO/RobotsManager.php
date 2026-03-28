@@ -99,11 +99,17 @@ final class RobotsManager
     }
 
     /**
-     * Append sitemap URL to robots.txt.
+     * Filter robots.txt output.
+     *
+     * When custom robots.txt is enabled and content is non-empty, replaces
+     * the entire WP-generated output with custom content. The sitemap URL
+     * is auto-appended unless the custom content already contains a Sitemap
+     * directive pointing to our sitemap.
+     *
+     * When disabled, falls back to WP default + sitemap URL append.
      *
      * FIX #2: WordPress passes $public as string ('0' or '1'), NOT bool.
      * Under declare(strict_types=1), typing it as bool causes TypeError.
-     * Accept string and cast internally.
      *
      * @param string $output  Current robots.txt content.
      * @param string $public  '1' if blog is public, '0' otherwise (WP core passes string).
@@ -114,8 +120,31 @@ final class RobotsManager
         if (! (bool) $public) {
             return $output;
         }
+
+        $sitemapUrl = home_url('/cel-sitemap.xml');
+
+        if ($this->opts->robotsTxtEnabled()) {
+            $custom = $this->opts->robotsTxtContent();
+            if ($custom !== '') {
+                $output = $custom;
+
+                // Ensure trailing newline for well-formed robots.txt
+                if (! str_ends_with($output, "\n")) {
+                    $output .= "\n";
+                }
+
+                // Auto-append sitemap URL only if not already present
+                if (stripos($output, $sitemapUrl) === false) {
+                    $output .= "\nSitemap: " . $sitemapUrl . "\n";
+                }
+
+                return $output;
+            }
+        }
+
+        // Default: append sitemap URL to WP-generated output
         $output .= "\n# Celestial Sitemap v" . CEL_VERSION . "\n";
-        $output .= 'Sitemap: ' . home_url('/cel-sitemap.xml') . "\n";
+        $output .= 'Sitemap: ' . $sitemapUrl . "\n";
 
         return $output;
     }

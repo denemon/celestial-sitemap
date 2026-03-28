@@ -98,8 +98,10 @@ final class Activator
             'cel_gsc_client_secret'  => ['', false],
             'cel_gsc_access_token'   => ['', false],
             'cel_indexnow_key'       => ['', false],
-            'cel_404_rate_limit'     => [100, false],
-            'cel_404_max_rows'       => [50000, false],
+            'cel_robots_txt_enabled'  => [0, false],
+            'cel_robots_txt_content'  => ['', false],
+            'cel_404_rate_limit'      => [100, false],
+            'cel_404_max_rows'        => [50000, false],
         ];
 
         foreach ($defaults as $key => [$value, $autoload]) {
