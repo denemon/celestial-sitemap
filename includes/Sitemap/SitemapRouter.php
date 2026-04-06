@@ -194,11 +194,13 @@ final class SitemapRouter
 
         if ($xml === '') {
             $this->cleanOutputBuffer();
-            \status_header(404);
+            \status_header(200);
             \header('Content-Type: application/xml; charset=UTF-8');
+            \header('Cache-Control: public, max-age=3600');
             \header('X-Robots-Tag: noindex');
             \header('X-Content-Type-Options: nosniff');
-            echo '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>';
+            echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
+                . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>';
             exit;
         }
 
@@ -381,14 +383,12 @@ final class SitemapRouter
             ];
         }
 
-        // News sitemap (posts from last 48 hours)
-        $newsCount = $this->countRecentPosts(self::NEWS_MAX_AGE_HOURS);
-        if ($newsCount > 0) {
-            $entries[] = [
-                'loc'     => \home_url('/cel-sitemap-news.xml'),
-                'lastmod' => \gmdate('c'),
-            ];
-        }
+        // News sitemap — always listed in the index so crawlers can
+        // discover it even when no articles were published in the last 48 h.
+        $entries[] = [
+            'loc'     => \home_url('/cel-sitemap-news.xml'),
+            'lastmod' => \gmdate('c'),
+        ];
 
         // Image sitemap (posts with featured images)
         $imageCount = $this->countImagePosts();
@@ -446,10 +446,6 @@ final class SitemapRouter
         } elseif (\taxonomy_exists($type)) {
             $urls = $this->getTaxonomyUrls($type, self::MAX_URLS, $offset);
         } else {
-            return '';
-        }
-
-        if (empty($urls)) {
             return '';
         }
 
@@ -512,14 +508,18 @@ final class SitemapRouter
     private function buildNewsSitemap(): string
     {
         $urls = $this->getNewsUrls();
-        if (empty($urls)) {
-            return '';
-        }
 
         $xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
         $xml .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"';
-        $xml .= ' xmlns:news="http://www.google.com/schemas/sitemap-news/0.9"';
-        $xml .= ' xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">' . "\n";
+
+        // Only declare news/image namespaces when entries exist.
+        // An empty <urlset> with xmlns:news declared but no <news:news> tags
+        // causes Google Search Console to report "XML tag not specified".
+        if ($urls) {
+            $xml .= ' xmlns:news="http://www.google.com/schemas/sitemap-news/0.9"';
+            $xml .= ' xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"';
+        }
+        $xml .= '>' . "\n";
 
         $siteName = \get_bloginfo('name');
         $language = \substr(\get_locale(), 0, 2);
@@ -855,8 +855,19 @@ final class SitemapRouter
             self::NEWS_MAX_URLS
         ));
 
+        // Fallback: when no posts exist within the time window,
+        // fetch the single most recent published post so the sitemap
+        // is never completely empty.
         if (empty($ids)) {
-            return [];
+            $ids = (array) $wpdb->get_col(
+                "SELECT ID FROM {$wpdb->posts}
+                 WHERE post_type = 'post' AND post_status = 'publish'
+                 ORDER BY post_date_gmt DESC
+                 LIMIT 1"
+            );
+            if (empty($ids)) {
+                return [];
+            }
         }
 
         $intIds = \array_map('intval', $ids);
@@ -1233,10 +1244,8 @@ final class SitemapRouter
             $this->getCachedOrGenerate("{$tax}_p1", fn() => $this->buildSitemap($tax, 1));
         }
 
-        // Generate news sitemap
-        if ($this->countRecentPosts(self::NEWS_MAX_AGE_HOURS) > 0) {
-            $this->getCachedOrGenerate('news', fn() => $this->buildNewsSitemap());
-        }
+        // Generate news sitemap (always, even when empty)
+        $this->getCachedOrGenerate('news', fn() => $this->buildNewsSitemap());
 
         // Generate image sitemap
         $imageCount = $this->countImagePosts();
@@ -1296,6 +1305,7 @@ final class SitemapRouter
 
         $etag = '"' . \md5($xml) . '"';
 
+        \status_header(200);
         \header('Content-Type: application/xml; charset=UTF-8');
         \header('Cache-Control: public, max-age=3600');
         \header('X-Robots-Tag: noindex');
