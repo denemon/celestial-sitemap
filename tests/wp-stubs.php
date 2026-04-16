@@ -413,6 +413,44 @@ final class CelestialSitemapFakeWpdb
             );
         }
 
+        if (
+            str_starts_with($template, "SELECT p.ID FROM {$this->posts} p LEFT JOIN {$this->postmeta} noidx")
+            && str_contains($template, 'p.post_modified_gmt >= %s')
+            && str_contains($template, 'ORDER BY p.post_modified_gmt DESC LIMIT %d')
+        ) {
+            $postTypeCount = max(0, count($args) - 2);
+            $postTypes     = array_map('strval', array_slice($args, 0, $postTypeCount));
+            $cutoff        = (string) ($args[$postTypeCount] ?? '');
+            $limit         = (int) ($args[$postTypeCount + 1] ?? 0);
+            $rows          = [];
+
+            foreach ($GLOBALS['cel_test_posts'] as $post) {
+                if (! in_array((string) ($post->post_type ?? ''), $postTypes, true)) {
+                    continue;
+                }
+                if (($post->post_status ?? '') !== 'publish') {
+                    continue;
+                }
+                if (($post->post_modified_gmt ?? '') < $cutoff) {
+                    continue;
+                }
+
+                $noindex = $GLOBALS['cel_test_post_meta'][(int) ($post->ID ?? 0)]['_cel_noindex'] ?? '';
+                if ((string) $noindex === '1') {
+                    continue;
+                }
+
+                $rows[] = $post;
+            }
+
+            usort($rows, static fn(object $a, object $b): int => strcmp((string) $b->post_modified_gmt, (string) $a->post_modified_gmt));
+
+            return array_map(
+                static fn(object $post): int => (int) $post->ID,
+                $limit > 0 ? array_slice($rows, 0, $limit) : $rows
+            );
+        }
+
         return [];
     }
 
@@ -1120,6 +1158,11 @@ function esc_xml(string $text): string
 function admin_url(string $path = ''): string
 {
     return 'https://example.org/wp-admin/' . ltrim($path, '/');
+}
+
+function status_header(int $code): void
+{
+    $GLOBALS['cel_last_status_header'] = $code;
 }
 
 function wp_create_nonce(string $action = '-1'): string

@@ -110,7 +110,7 @@ if (! defined('ABSPATH')) {
                 </tr>
             </table>
             <p>
-                <a href="<?php echo esc_url(home_url('/cel-sitemap.xml')); ?>" target="_blank" class="button"><?php esc_html_e('View Sitemap', 'celestial-sitemap'); ?></a>
+                <a href="<?php echo esc_url(home_url('/sitemap.xml')); ?>" target="_blank" class="button"><?php esc_html_e('View Sitemap', 'celestial-sitemap'); ?></a>
                 <button type="button" id="cel-flush-sitemap" class="button"><?php esc_html_e('Flush Sitemap Cache', 'celestial-sitemap'); ?></button>
             </p>
         </div>

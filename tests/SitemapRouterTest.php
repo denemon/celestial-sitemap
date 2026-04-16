@@ -121,6 +121,133 @@ final class SitemapRouterTest extends CelestialSitemap_TestCase
         $this->assertStringContainsString('<urlset', $response['xml']);
     }
 
+    public function test_detect_from_uri_supports_standard_aliases_and_html_hub(): void
+    {
+        $_SERVER['REQUEST_URI'] = '/sitemap.xml';
+        $this->assertSame(['index', 1, false], $this->invokePrivateMethod($this->router, 'detectFromUri'));
+
+        $_SERVER['REQUEST_URI'] = '/sitemap-recent.xml';
+        $this->assertSame(['recent', 1, false], $this->invokePrivateMethod($this->router, 'detectFromUri'));
+
+        $_SERVER['REQUEST_URI'] = '/cel-sitemap-hub/';
+        $this->assertSame(['hub', 1, false], $this->invokePrivateMethod($this->router, 'detectFromUri'));
+    }
+
+    public function test_build_recent_sitemap_only_lists_recent_indexable_urls(): void
+    {
+        $this->options->set('cel_sitemap_post_types', ['post', 'page']);
+
+        $recent = gmdate('Y-m-d H:i:s', time() - DAY_IN_SECONDS);
+        $old    = gmdate('Y-m-d H:i:s', time() - (30 * DAY_IN_SECONDS));
+
+        $GLOBALS['cel_test_posts'][101] = (object) [
+            'ID'                => 101,
+            'post_type'         => 'post',
+            'post_status'       => 'publish',
+            'post_modified_gmt' => $recent,
+            'post_title'        => 'Fresh Post',
+            'permalink'         => 'https://example.org/fresh-post/',
+        ];
+        $GLOBALS['cel_test_posts'][102] = (object) [
+            'ID'                => 102,
+            'post_type'         => 'page',
+            'post_status'       => 'publish',
+            'post_modified_gmt' => $recent,
+            'post_title'        => 'Fresh Page',
+            'permalink'         => 'https://example.org/fresh-page/',
+        ];
+        $GLOBALS['cel_test_posts'][103] = (object) [
+            'ID'                => 103,
+            'post_type'         => 'post',
+            'post_status'       => 'publish',
+            'post_modified_gmt' => $old,
+            'post_title'        => 'Old Post',
+            'permalink'         => 'https://example.org/old-post/',
+        ];
+        $GLOBALS['cel_test_posts'][104] = (object) [
+            'ID'                => 104,
+            'post_type'         => 'post',
+            'post_status'       => 'publish',
+            'post_modified_gmt' => $recent,
+            'post_title'        => 'Noindex Post',
+            'permalink'         => 'https://example.org/noindex-post/',
+        ];
+        $GLOBALS['cel_test_post_meta'][104]['_cel_noindex'] = '1';
+
+        $xml = $this->invokePrivateMethod($this->router, 'buildRecentSitemap');
+
+        $this->assertStringContainsString('https://example.org/fresh-post/', $xml);
+        $this->assertStringContainsString('https://example.org/fresh-page/', $xml);
+        $this->assertStringNotContainsString('https://example.org/old-post/', $xml);
+        $this->assertStringNotContainsString('https://example.org/noindex-post/', $xml);
+    }
+
+    public function test_build_index_lists_recent_sitemap_when_recent_entries_exist(): void
+    {
+        $this->options->set('cel_sitemap_post_types', ['post']);
+
+        $GLOBALS['cel_test_posts'][101] = (object) [
+            'ID'                => 101,
+            'post_type'         => 'post',
+            'post_status'       => 'publish',
+            'post_modified_gmt' => gmdate('Y-m-d H:i:s', time() - DAY_IN_SECONDS),
+            'post_title'        => 'Fresh Post',
+            'permalink'         => 'https://example.org/fresh-post/',
+        ];
+
+        $xml = $this->invokePrivateMethod($this->router, 'buildIndex');
+
+        $this->assertStringContainsString('https://example.org/sitemap-recent.xml', $xml);
+    }
+
+    public function test_build_html_hub_lists_recent_content_and_taxonomy_links(): void
+    {
+        $this->options->set('cel_sitemap_post_types', ['post']);
+        $this->seedTaxonomy('category', 1);
+
+        $GLOBALS['cel_test_taxonomies']['category'] = (object) [
+            'name'   => 'category',
+            'labels' => (object) ['name' => 'Categories'],
+        ];
+
+        $GLOBALS['cel_test_posts'][101] = (object) [
+            'ID'                => 101,
+            'post_type'         => 'post',
+            'post_status'       => 'publish',
+            'post_modified_gmt' => gmdate('Y-m-d H:i:s', time() - DAY_IN_SECONDS),
+            'post_title'        => 'Fresh Post',
+            'permalink'         => 'https://example.org/fresh-post/',
+        ];
+
+        $html = $this->invokePrivateMethod($this->router, 'buildHtmlHub');
+
+        $this->assertStringContainsString('https://example.org/sitemap.xml', $html);
+        $this->assertStringContainsString('https://example.org/sitemap-recent.xml', $html);
+        $this->assertStringContainsString('https://example.org/fresh-post/', $html);
+        $this->assertStringContainsString('https://example.org/term-1/', $html);
+        $this->assertStringContainsString('Categories', $html);
+    }
+
+    public function test_render_discovery_links_is_limited_to_hub_pages(): void
+    {
+        $GLOBALS['cel_test_conditionals']['is_front_page'] = true;
+
+        ob_start();
+        $this->router->renderDiscoveryLinks();
+        $hubOutput = (string) ob_get_clean();
+
+        $this->assertStringContainsString('https://example.org/cel-sitemap-hub/', $hubOutput);
+        $this->assertStringContainsString('https://example.org/sitemap.xml', $hubOutput);
+
+        $GLOBALS['cel_test_conditionals'] = [];
+
+        ob_start();
+        $this->router->renderDiscoveryLinks();
+        $plainOutput = (string) ob_get_clean();
+
+        $this->assertSame('', $plainOutput);
+    }
+
     private function seedTaxonomy(string $taxonomy, int $count): void
     {
         $GLOBALS['cel_test_term_counts'][$taxonomy] = $count;

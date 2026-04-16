@@ -72,7 +72,7 @@ if (! defined('ABSPATH')) {
                             name="cel_robots_txt_content"
                             class="large-text code cel-robots-textarea"
                             rows="15"
-                            placeholder="<?php echo esc_attr("User-agent: *\nDisallow: /wp-admin/\nAllow: /wp-admin/admin-ajax.php\n\nSitemap: " . home_url('/cel-sitemap.xml')); ?>"
+                            placeholder="<?php echo esc_attr("User-agent: *\nDisallow: /wp-admin/\nAllow: /wp-admin/admin-ajax.php\n\nSitemap: " . home_url('/sitemap.xml')); ?>"
                         ><?php echo esc_textarea($opts->robotsTxtContent()); ?></textarea>
                         <p class="description">
                             <?php
@@ -80,7 +80,7 @@ if (! defined('ABSPATH')) {
                                 /* translators: %d: maximum kilobytes */
                                 esc_html__('Maximum %d KB. One directive per line. The sitemap URL (%s) is appended automatically if not included.', 'celestial-sitemap'),
                                 64,
-                                '<code>' . esc_html(home_url('/cel-sitemap.xml')) . '</code>'
+                                '<code>' . esc_html(home_url('/sitemap.xml')) . '</code>'
                             );
                             ?>
                         </p>

@@ -8,6 +8,7 @@ use CelestialSitemap\Core\Options;
 use CelestialSitemap\Schema\SchemaManager;
 use CelestialSitemap\SEO\CanonicalManager;
 use CelestialSitemap\SEO\HeadManager;
+use CelestialSitemap\SEO\RobotsManager;
 
 final class SeoManagersTest extends CelestialSitemap_TestCase
 {
@@ -52,5 +53,15 @@ final class SeoManagersTest extends CelestialSitemap_TestCase
         $this->assertSame('https://example.org/landing/', $ogp['og:url']);
         $this->assertArrayNotHasKey('article:published_time', $ogp);
         $this->assertArrayNotHasKey('article:modified_time', $ogp);
+    }
+
+    public function test_robots_txt_points_to_the_standard_sitemap_alias(): void
+    {
+        $manager = new RobotsManager(new Options());
+
+        $output = $manager->filterRobotsTxt("User-agent: *\nDisallow:\n", '1');
+
+        $this->assertStringContainsString('Sitemap: https://example.org/sitemap.xml', $output);
+        $this->assertStringNotContainsString('Sitemap: https://example.org/cel-sitemap.xml', $output);
     }
 }

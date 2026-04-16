@@ -22,6 +22,9 @@ if (! defined('ABSPATH')) {
  *  - Auto-invalidates on post save/delete/term changes via version counter.
  *  - 2,500 URLs per sitemap file (conservative; spec allows 50,000).
  *  - ETag + 304 Not Modified.
+ *  - Standard `/sitemap.xml` alias for better crawler compatibility.
+ *  - Focused recent-updates sitemap for faster new URL discovery.
+ *  - HTML sitemap hub (noindex, follow) linked from strong hub pages.
  *  - Image sitemap extension.
  *  - Separate cache files per type: index, post-1, page-1, category, etc.
  *
@@ -52,6 +55,10 @@ final class SitemapRouter
      */
     private const NEWS_MAX_URLS      = 1000;
     private const NEWS_MAX_AGE_HOURS = 48;
+    private const RECENT_MAX_URLS    = 500;
+    private const RECENT_MAX_AGE_DAYS = 14;
+    private const HUB_RECENT_LIMIT   = 200;
+    private const HUB_TERM_LIMIT     = 100;
 
     private int $cacheTtl;
 
@@ -88,12 +95,17 @@ final class SitemapRouter
 
         // Cron callback for background pre-generation
         \add_action('cel_pregenerate_sitemaps', [$this, 'pregenerateSitemaps']);
+
+        // Add lightweight discovery links only on strong hub pages.
+        \add_action('wp_footer', [$this, 'renderDiscoveryLinks'], 100);
     }
 
     // ── Rewrite rules ────────────────────────────────────────────────
 
     public function addRewriteRules(): void
     {
+        \add_rewrite_rule('^sitemap\.xml/?$', 'index.php?cel_sitemap=index', 'top');
+        \add_rewrite_rule('^sitemap-recent\.xml/?$', 'index.php?cel_sitemap=recent', 'top');
         \add_rewrite_rule('^cel-sitemap\.xml/?$', 'index.php?cel_sitemap=index', 'top');
         \add_rewrite_rule(
             '^cel-sitemap-([a-z0-9_-]+?)-(\d+)\.xml/?$',
@@ -105,6 +117,7 @@ final class SitemapRouter
             'index.php?cel_sitemap=$matches[1]',
             'top'
         );
+        \add_rewrite_rule('^cel-sitemap-hub/?$', 'index.php?cel_sitemap=hub', 'top');
         \add_rewrite_rule('^cel-sitemap\.xsl/?$', 'index.php?cel_xsl=1', 'top');
     }
 
@@ -171,6 +184,11 @@ final class SitemapRouter
             exit;
         }
 
+        if ($type === 'hub') {
+            $this->serveHtmlHub();
+            exit;
+        }
+
         $this->serveSitemap($type, $page);
     }
 
@@ -214,6 +232,10 @@ final class SitemapRouter
             return $this->getCachedOrGenerate('idx', fn() => $this->buildIndex());
         }
 
+        if ($type === 'recent') {
+            return $this->getCachedOrGenerate('recent', fn() => $this->buildRecentSitemap());
+        }
+
         if ($type === 'news') {
             return $this->getCachedOrGenerate('news', fn() => $this->buildNewsSitemap());
         }
@@ -236,6 +258,10 @@ final class SitemapRouter
         }
 
         if ($type === 'index' || $type === 'news') {
+            return $page === 1;
+        }
+
+        if ($type === 'recent') {
             return $page === 1;
         }
 
@@ -289,8 +315,20 @@ final class SitemapRouter
             return ['index', 1, false];
         }
 
+        if ($path === 'sitemap.xml') {
+            return ['index', 1, false];
+        }
+
+        if ($path === 'sitemap-recent.xml') {
+            return ['recent', 1, false];
+        }
+
         if ($path === 'cel-sitemap.xsl') {
             return ['', 1, true];
+        }
+
+        if ($path === 'cel-sitemap-hub') {
+            return ['hub', 1, false];
         }
 
         if (\preg_match('/^cel-sitemap-([a-z0-9_-]+?)-(\d+)\.xml$/', $path, $m)) {
@@ -420,6 +458,14 @@ final class SitemapRouter
     private function buildIndex(): string
     {
         $entries = [];
+
+        $this->maybeAppendIndexEntry(
+            $entries,
+            'recent',
+            fn() => $this->buildRecentSitemap(),
+            \home_url('/sitemap-recent.xml'),
+            \gmdate('c')
+        );
 
         foreach ($this->opts->sitemapPostTypes() as $pt) {
             $count = $this->countPostType($pt);
@@ -589,6 +635,41 @@ final class SitemapRouter
                 }
             }
 
+            $xml .= "  </url>\n";
+        }
+
+        $xml .= '</urlset>';
+        return $xml;
+    }
+
+    /**
+     * Build a focused sitemap for recently updated content.
+     *
+     * This gives crawlers a smaller, higher-signal feed of URLs whose
+     * discovery or freshness matters most right now.
+     */
+    private function buildRecentSitemap(): string
+    {
+        $urls = $this->getRecentEntries(self::RECENT_MAX_URLS, self::RECENT_MAX_AGE_DAYS);
+        if (empty($urls)) {
+            return '';
+        }
+
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+        $xml .= '<?xml-stylesheet type="text/xsl" href="' . \esc_url(\home_url('/cel-sitemap.xsl')) . '"?>' . "\n";
+        $xml .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
+
+        foreach ($urls as $u) {
+            $loc = \esc_url($u['loc'] ?? '');
+            if ($loc === '') {
+                continue;
+            }
+
+            $xml .= "  <url>\n";
+            $xml .= '    <loc>' . $loc . "</loc>\n";
+            if (! empty($u['lastmod'])) {
+                $xml .= '    <lastmod>' . $this->escXml($u['lastmod']) . "</lastmod>\n";
+            }
             $xml .= "  </url>\n";
         }
 
@@ -797,19 +878,7 @@ final class SitemapRouter
         ));
 
         if (empty($ids)) {
-            $fallbackIds = (array) $wpdb->get_col($wpdb->prepare(
-                "SELECT ID FROM {$wpdb->posts}
-                 WHERE post_type = 'post' AND post_status = 'publish'
-                 ORDER BY post_date_gmt DESC
-                 LIMIT %d",
-                1
-            ));
-
-            if (empty($fallbackIds)) {
-                return [];
-            }
-
-            $ids = $fallbackIds;
+            return [];
         }
 
         $intIds = \array_map('intval', $ids);
@@ -1250,7 +1319,236 @@ final class SitemapRouter
         ));
     }
 
+    /**
+     * @return array<int, array{loc: string, lastmod: string, title: string}>
+     */
+    private function getRecentEntries(int $limit, int $maxAgeDays): array
+    {
+        global $wpdb;
+
+        $postTypes = $this->opts->sitemapPostTypes();
+        if (empty($postTypes)) {
+            return [];
+        }
+
+        $placeholders = \implode(',', \array_fill(0, \count($postTypes), '%s'));
+        $cutoff       = \gmdate('Y-m-d H:i:s', \time() - ($maxAgeDays * DAY_IN_SECONDS));
+        $args         = $postTypes;
+        $args[]       = $cutoff;
+        $args[]       = $limit;
+
+        $ids = (array) $wpdb->get_col($wpdb->prepare(
+            "SELECT p.ID FROM {$wpdb->posts} p
+             LEFT JOIN {$wpdb->postmeta} noidx
+               ON p.ID = noidx.post_id
+              AND noidx.meta_key = '_cel_noindex'
+              AND noidx.meta_value = '1'
+             WHERE p.post_type IN ({$placeholders}) AND p.post_status = 'publish'
+               AND noidx.post_id IS NULL
+               AND p.post_modified_gmt >= %s
+             ORDER BY p.post_modified_gmt DESC
+             LIMIT %d",
+            ...$args
+        ));
+
+        if (empty($ids)) {
+            return [];
+        }
+
+        $intIds = \array_map('intval', $ids);
+
+        if (\function_exists('_prime_post_caches')) {
+            \_prime_post_caches($intIds, false, false);
+        }
+        \update_postmeta_cache($intIds);
+
+        $entries = [];
+        foreach ($intIds as $id) {
+            if (\get_post_meta($id, '_cel_noindex', true) === '1') {
+                continue;
+            }
+
+            $post = \get_post($id);
+            if (! $post) {
+                continue;
+            }
+
+            $permalink = \get_permalink($post);
+            if (! $permalink) {
+                continue;
+            }
+
+            $timestamp = \strtotime($post->post_modified_gmt ?? '');
+            $entries[] = [
+                'loc'     => $permalink,
+                'lastmod' => $timestamp ? \gmdate('c', $timestamp) : \gmdate('c'),
+                'title'   => \get_the_title($post),
+            ];
+        }
+
+        return $entries;
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────
+
+    /**
+     * Render crawlable discovery links only on strong hub pages.
+     */
+    public function renderDiscoveryLinks(): void
+    {
+        if (\is_admin()) {
+            return;
+        }
+
+        if (! (bool) \apply_filters('cel_discovery_footer_links', true)) {
+            return;
+        }
+
+        if (
+            ! \is_front_page()
+            && ! \is_home()
+            && ! \is_category()
+            && ! \is_tag()
+            && ! \is_tax()
+            && ! \is_post_type_archive()
+        ) {
+            return;
+        }
+
+        echo '<nav class="cel-discovery-links" aria-label="' . \esc_attr(\__('Sitemap links', 'celestial-sitemap')) . '">';
+        echo '<a href="' . \esc_url(\home_url('/cel-sitemap-hub/')) . '">' . \esc_html__('HTML Sitemap', 'celestial-sitemap') . '</a>';
+        echo ' <span aria-hidden="true">&middot;</span> ';
+        echo '<a href="' . \esc_url(\home_url('/sitemap.xml')) . '">' . \esc_html__('XML Sitemap', 'celestial-sitemap') . '</a>';
+        echo "</nav>\n";
+    }
+
+    private function serveHtmlHub(): void
+    {
+        $this->cleanOutputBuffer();
+        \status_header(200);
+        \header('Content-Type: text/html; charset=UTF-8');
+        \header('Cache-Control: public, max-age=900');
+        \header('X-Robots-Tag: noindex, follow');
+        echo $this->buildHtmlHub();
+    }
+
+    private function buildHtmlHub(): string
+    {
+        $lang        = \substr(\get_locale(), 0, 2);
+        $recent      = $this->getRecentEntries(self::HUB_RECENT_LIMIT, self::RECENT_MAX_AGE_DAYS);
+        $taxonomyMap = $this->getHubTaxonomySections();
+        $title       = \__('Sitemap Hub', 'celestial-sitemap');
+        $xmlLinks    = [
+            \__('Primary XML Sitemap', 'celestial-sitemap') => \home_url('/sitemap.xml'),
+        ];
+
+        if ($recent !== []) {
+            $xmlLinks[\__('Recent Updates Sitemap', 'celestial-sitemap')] = \home_url('/sitemap-recent.xml');
+        }
+
+        $html = '<!DOCTYPE html>' . "\n";
+        $html .= '<html lang="' . $this->escXml($lang !== '' ? $lang : 'en') . '">' . "\n";
+        $html .= "<head>\n";
+        $html .= '  <meta charset="UTF-8" />' . "\n";
+        $html .= '  <meta name="viewport" content="width=device-width, initial-scale=1" />' . "\n";
+        $html .= '  <meta name="robots" content="noindex,follow" />' . "\n";
+        $html .= '  <title>' . $this->escXml($title) . "</title>\n";
+        $html .= "  <style>\n";
+        $html .= "    body{font-family:Georgia,serif;line-height:1.6;margin:0;color:#1f2933;background:#f8fafc;}\n";
+        $html .= "    main{max-width:960px;margin:0 auto;padding:2rem 1.25rem 3rem;}\n";
+        $html .= "    h1,h2{line-height:1.2;color:#102a43;}\n";
+        $html .= "    section{background:#fff;border:1px solid #d9e2ec;border-radius:14px;padding:1.25rem 1.5rem;margin:1rem 0;}\n";
+        $html .= "    ul{padding-left:1.25rem;}\n";
+        $html .= "    li+li{margin-top:.4rem;}\n";
+        $html .= "    a{color:#0b6e4f;}\n";
+        $html .= "    p{margin:.5rem 0 0;}\n";
+        $html .= "  </style>\n";
+        $html .= "</head>\n<body>\n<main>\n";
+        $html .= '  <h1>' . $this->escXml($title) . "</h1>\n";
+        $html .= '  <p>' . $this->escXml(\__('This page helps crawlers reach your most important discovery paths without competing for indexation itself.', 'celestial-sitemap')) . "</p>\n";
+        $html .= $this->buildHtmlHubSection(\__('XML Sitemaps', 'celestial-sitemap'), $xmlLinks);
+
+        if ($recent !== []) {
+            $recentLinks = [];
+            foreach ($recent as $entry) {
+                $recentLinks[$entry['title'] !== '' ? $entry['title'] : $entry['loc']] = $entry['loc'];
+            }
+            $html .= $this->buildHtmlHubSection(\__('Recently Updated Content', 'celestial-sitemap'), $recentLinks);
+        }
+
+        foreach ($taxonomyMap as $label => $links) {
+            $html .= $this->buildHtmlHubSection($label, $links);
+        }
+
+        $html .= "</main>\n</body>\n</html>";
+
+        return $html;
+    }
+
+    /**
+     * @return array<string, array<string, string>>
+     */
+    private function getHubTaxonomySections(): array
+    {
+        $sections = [];
+
+        foreach ($this->opts->sitemapTaxonomies() as $taxonomy) {
+            $terms = \get_terms($this->taxonomyQueryArgs($taxonomy, self::HUB_TERM_LIMIT, 0));
+            if (\is_wp_error($terms) || ! \is_array($terms) || $terms === []) {
+                continue;
+            }
+
+            $links = [];
+            foreach ($terms as $term) {
+                $link = \get_term_link($term);
+                if (\is_wp_error($link)) {
+                    continue;
+                }
+                $links[$term->name] = $link;
+            }
+
+            if ($links === []) {
+                continue;
+            }
+
+            $taxonomyObject = \get_taxonomy($taxonomy);
+            $label = $taxonomyObject && isset($taxonomyObject->labels->name)
+                ? (string) $taxonomyObject->labels->name
+                : $taxonomy;
+
+            $sections[$label] = $links;
+        }
+
+        return $sections;
+    }
+
+    /**
+     * @param array<string, string> $links
+     */
+    private function buildHtmlHubSection(string $title, array $links): string
+    {
+        if ($links === []) {
+            return '';
+        }
+
+        $html = "  <section>\n";
+        $html .= '    <h2>' . $this->escXml($title) . "</h2>\n";
+        $html .= "    <ul>\n";
+
+        foreach ($links as $label => $url) {
+            $escapedUrl = \esc_url($url);
+            if ($escapedUrl === '') {
+                continue;
+            }
+
+            $html .= '      <li><a href="' . $escapedUrl . '">' . $this->escXml($label) . "</a></li>\n";
+        }
+
+        $html .= "    </ul>\n";
+        $html .= "  </section>\n";
+
+        return $html;
+    }
 
     private function countPostType(string $pt): int
     {
@@ -1419,6 +1717,9 @@ final class SitemapRouter
                 $this->getCachedOrGenerate("{$tax}_p{$i}", fn() => $this->buildSitemap($tax, $i));
             }
         }
+
+        // Generate the focused recent-updates sitemap when it has entries.
+        $this->getCachedOrGenerate('recent', fn() => $this->buildRecentSitemap());
 
         // Generate news sitemap (always, even when empty)
         $this->getCachedOrGenerate('news', fn() => $this->buildNewsSitemap());

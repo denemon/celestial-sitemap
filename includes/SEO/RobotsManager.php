@@ -121,7 +121,8 @@ final class RobotsManager
             return $output;
         }
 
-        $sitemapUrl = home_url('/cel-sitemap.xml');
+        $sitemapUrl       = home_url('/sitemap.xml');
+        $legacySitemapUrl = home_url('/cel-sitemap.xml');
 
         if ($this->opts->robotsTxtEnabled()) {
             $custom = $this->opts->robotsTxtContent();
@@ -134,7 +135,7 @@ final class RobotsManager
                 }
 
                 // Auto-append sitemap URL only if not already present
-                if (stripos($output, $sitemapUrl) === false) {
+                if (stripos($output, $sitemapUrl) === false && stripos($output, $legacySitemapUrl) === false) {
                     $output .= "\nSitemap: " . $sitemapUrl . "\n";
                 }
 
