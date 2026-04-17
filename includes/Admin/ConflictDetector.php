@@ -19,6 +19,7 @@ if (! defined('ABSPATH')) {
  *  - Google XML Sitemaps (Arne Brachhold)
  *  - XML Sitemap & Google News
  *  - Jetpack (Sitemaps module)
+ *  - Google Site Kit (emits its own canonical/robots when Search Console module active)
  *
  * Detection uses function_exists(), defined(), and class_exists()
  * with autoload disabled to avoid fatal errors.
@@ -97,6 +98,13 @@ final class ConflictDetector
             if (\Jetpack::is_module_active('sitemaps')) {
                 $conflicts[] = 'Jetpack Sitemaps';
             }
+        }
+
+        // Google Site Kit — emits its own canonical and robots meta on front pages
+        // when the Search Console module is connected. Flag so the operator can
+        // reconcile the duplicate tags observed in the rendered <head>.
+        if (defined('GOOGLESITEKIT_VERSION') || class_exists('Google\\Site_Kit\\Plugin', false)) {
+            $conflicts[] = 'Google Site Kit';
         }
 
         return $conflicts;

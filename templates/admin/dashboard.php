@@ -113,6 +113,107 @@ if (! defined('ABSPATH')) {
                 <a href="<?php echo esc_url(home_url('/sitemap.xml')); ?>" target="_blank" class="button"><?php esc_html_e('View Sitemap', 'celestial-sitemap'); ?></a>
                 <button type="button" id="cel-flush-sitemap" class="button"><?php esc_html_e('Flush Sitemap Cache', 'celestial-sitemap'); ?></button>
             </p>
+
+            <h3 style="margin-top:24px;"><?php esc_html_e('Submit to Search Console', 'celestial-sitemap'); ?></h3>
+            <p class="description"><?php esc_html_e('Copy the URL below and paste it into the "Add a new sitemap" field in Google Search Console, Bing Webmaster Tools, or Yandex Webmaster. The URL is also linked automatically from your robots.txt.', 'celestial-sitemap'); ?></p>
+            <table class="form-table">
+                <tr>
+                    <th><label for="cel_sitemap_url"><?php esc_html_e('Sitemap URL', 'celestial-sitemap'); ?></label></th>
+                    <td>
+                        <input
+                            type="text"
+                            id="cel_sitemap_url"
+                            value="<?php echo esc_attr(home_url('/sitemap.xml')); ?>"
+                            class="large-text code"
+                            readonly
+                            onfocus="this.select();"
+                        />
+                        <p class="description">
+                            <a href="https://search.google.com/search-console/sitemaps" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Open Google Search Console', 'celestial-sitemap'); ?></a>
+                            &nbsp;·&nbsp;
+                            <a href="https://www.bing.com/webmasters/sitemaps" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Open Bing Webmaster Tools', 'celestial-sitemap'); ?></a>
+                        </p>
+                    </td>
+                </tr>
+            </table>
+
+            <h3 style="margin-top:24px;"><?php esc_html_e('IndexNow', 'celestial-sitemap'); ?></h3>
+            <p class="description"><?php esc_html_e('When a post is published the plugin notifies Bing, Yandex, Naver and Seznam via the IndexNow protocol. The values below are generated automatically; the key file URL is what search engines use to verify ownership.', 'celestial-sitemap'); ?></p>
+            <table class="form-table">
+                <tr>
+                    <th><label for="cel_indexnow_key_display"><?php esc_html_e('Site key', 'celestial-sitemap'); ?></label></th>
+                    <td>
+                        <input
+                            type="text"
+                            id="cel_indexnow_key_display"
+                            value="<?php echo esc_attr($opts->indexNowKey()); ?>"
+                            class="large-text code"
+                            readonly
+                            onfocus="this.select();"
+                        />
+                    </td>
+                </tr>
+                <tr>
+                    <th><label for="cel_indexnow_key_url"><?php esc_html_e('Key file URL', 'celestial-sitemap'); ?></label></th>
+                    <td>
+                        <input
+                            type="text"
+                            id="cel_indexnow_key_url"
+                            value="<?php echo esc_attr(home_url('/cel-indexnow-key.txt')); ?>"
+                            class="large-text code"
+                            readonly
+                            onfocus="this.select();"
+                        />
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Search engine verification -->
+        <div class="cel-card">
+            <h2><?php esc_html_e('Search Engine Verification', 'celestial-sitemap'); ?></h2>
+            <p class="description"><?php esc_html_e('Paste the verification code (not the full meta tag) from each webmaster tool. The plugin will output the required meta tag on the home page only. Leave a field empty to disable that provider.', 'celestial-sitemap'); ?></p>
+            <table class="form-table">
+                <tr>
+                    <th><label for="cel_verify_google"><?php esc_html_e('Google Search Console', 'celestial-sitemap'); ?></label></th>
+                    <td>
+                        <input type="text" id="cel_verify_google" name="cel_verify_google" value="<?php echo esc_attr($opts->verificationCode('google')); ?>" class="regular-text" autocomplete="off" spellcheck="false" />
+                        <p class="description"><?php esc_html_e('Output as: &lt;meta name="google-site-verification" content="…" /&gt;', 'celestial-sitemap'); ?></p>
+                    </td>
+                </tr>
+                <tr>
+                    <th><label for="cel_verify_bing"><?php esc_html_e('Bing Webmaster Tools', 'celestial-sitemap'); ?></label></th>
+                    <td>
+                        <input type="text" id="cel_verify_bing" name="cel_verify_bing" value="<?php echo esc_attr($opts->verificationCode('bing')); ?>" class="regular-text" autocomplete="off" spellcheck="false" />
+                        <p class="description"><?php esc_html_e('Output as: &lt;meta name="msvalidate.01" content="…" /&gt;', 'celestial-sitemap'); ?></p>
+                    </td>
+                </tr>
+                <tr>
+                    <th><label for="cel_verify_yandex"><?php esc_html_e('Yandex Webmaster', 'celestial-sitemap'); ?></label></th>
+                    <td>
+                        <input type="text" id="cel_verify_yandex" name="cel_verify_yandex" value="<?php echo esc_attr($opts->verificationCode('yandex')); ?>" class="regular-text" autocomplete="off" spellcheck="false" />
+                    </td>
+                </tr>
+                <tr>
+                    <th><label for="cel_verify_baidu"><?php esc_html_e('Baidu Webmaster', 'celestial-sitemap'); ?></label></th>
+                    <td>
+                        <input type="text" id="cel_verify_baidu" name="cel_verify_baidu" value="<?php echo esc_attr($opts->verificationCode('baidu')); ?>" class="regular-text" autocomplete="off" spellcheck="false" />
+                    </td>
+                </tr>
+                <tr>
+                    <th><label for="cel_verify_naver"><?php esc_html_e('Naver Webmaster', 'celestial-sitemap'); ?></label></th>
+                    <td>
+                        <input type="text" id="cel_verify_naver" name="cel_verify_naver" value="<?php echo esc_attr($opts->verificationCode('naver')); ?>" class="regular-text" autocomplete="off" spellcheck="false" />
+                    </td>
+                </tr>
+                <tr>
+                    <th><label for="cel_verify_pinterest"><?php esc_html_e('Pinterest', 'celestial-sitemap'); ?></label></th>
+                    <td>
+                        <input type="text" id="cel_verify_pinterest" name="cel_verify_pinterest" value="<?php echo esc_attr($opts->verificationCode('pinterest')); ?>" class="regular-text" autocomplete="off" spellcheck="false" />
+                        <p class="description"><?php esc_html_e('Output as: &lt;meta name="p:domain_verify" content="…" /&gt;', 'celestial-sitemap'); ?></p>
+                    </td>
+                </tr>
+            </table>
         </div>
 
         <!-- Schema -->

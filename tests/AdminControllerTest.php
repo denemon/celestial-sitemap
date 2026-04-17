@@ -30,6 +30,35 @@ final class AdminControllerTest extends CelestialSitemap_TestCase
         );
     }
 
+    public function test_ajax_save_settings_persists_sanitized_verification_codes(): void
+    {
+        $controller = new AdminController(new Options());
+
+        $_POST = [
+            '_ajax_nonce'         => 'nonce-cel_admin_nonce',
+            'cel_verify_google'   => '  google-code-123  ',
+            // タグ混入は除去される。
+            'cel_verify_bing'     => 'bing<script>bad</script>-code',
+            'cel_verify_yandex'   => '',
+            'cel_verify_pinterest'=> 'pin-code-789',
+        ];
+
+        try {
+            $controller->ajaxSaveSettings();
+            $this->fail('Expected AJAX response to terminate execution.');
+        } catch (CelestialSitemapAjaxExit) {
+        }
+
+        $this->assertTrue($GLOBALS['cel_last_json_response']['success']);
+
+        // 前後空白除去とタグ除去が効いていること。
+        $this->assertSame('google-code-123', get_option('cel_verify_google'));
+        $this->assertStringNotContainsString('<script>', (string) get_option('cel_verify_bing'));
+        // 空値の保存（既定へリセット相当）。
+        $this->assertSame('', get_option('cel_verify_yandex'));
+        $this->assertSame('pin-code-789', get_option('cel_verify_pinterest'));
+    }
+
     public function test_ajax_add_redirect_respects_the_selected_match_type(): void
     {
         $controller = new AdminController(new Options());

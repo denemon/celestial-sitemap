@@ -94,9 +94,12 @@ final class Activator
             'cel_breadcrumbs'        => [1, true],
             'cel_fb_app_id'          => ['', true],
             'cel_twitter_site'       => ['', true],
-            'cel_gsc_client_id'      => ['', false],
-            'cel_gsc_client_secret'  => ['', false],
-            'cel_gsc_access_token'   => ['', false],
+            'cel_verify_google'      => ['', true],
+            'cel_verify_bing'        => ['', true],
+            'cel_verify_yandex'      => ['', true],
+            'cel_verify_baidu'       => ['', true],
+            'cel_verify_naver'       => ['', true],
+            'cel_verify_pinterest'   => ['', true],
             'cel_indexnow_key'       => ['', false],
             'cel_robots_txt_enabled'  => [0, false],
             'cel_robots_txt_content'  => ['', false],
@@ -120,6 +123,7 @@ final class Activator
         add_rewrite_rule('^cel-sitemap-([a-z0-9_-]+?)\.xml/?$', 'index.php?cel_sitemap=$matches[1]', 'top');
         add_rewrite_rule('^cel-sitemap-hub/?$', 'index.php?cel_sitemap=hub', 'top');
         add_rewrite_rule('^cel-sitemap\.xsl/?$', 'index.php?cel_xsl=1', 'top');
+        add_rewrite_rule('^cel-indexnow-key\.txt/?$', 'index.php?cel_indexnow_key=1', 'top');
     }
 
     /**

@@ -99,6 +99,9 @@ final class AdminController
         if (! current_user_can('manage_options')) {
             wp_die(esc_html__('Unauthorized', 'celestial-sitemap'));
         }
+        // サイト鍵は初回の Dashboard 表示時に生成・保存する。
+        (new \CelestialSitemap\Indexing\IndexNowPinger($this->opts))->ensureKey();
+
         $opts = $this->opts;
         require CEL_DIR . 'templates/admin/dashboard.php';
     }
@@ -414,20 +417,13 @@ final class AdminController
             $this->opts->set('cel_sitemap_taxonomies', []);
         }
 
-        // GSC credentials — encrypt before storing
-        $gscSecretFields = ['cel_gsc_client_secret', 'cel_gsc_access_token'];
-        foreach ($gscSecretFields as $key) {
+        // Search engine verification codes — plain text, sanitized.
+        foreach (Options::VERIFICATION_PROVIDERS as $provider) {
+            $key = 'cel_verify_' . $provider;
             if (isset($_POST[$key])) {
-                $raw = sanitize_text_field(wp_unslash($_POST[$key]));
-                $encrypted = Options::encrypt($raw);
-                $this->opts->set($key, $encrypted);
+                $value = trim(sanitize_text_field(wp_unslash($_POST[$key])));
+                $this->opts->set($key, $value);
             }
-        }
-
-        // GSC client ID (not secret, no encryption needed)
-        if (isset($_POST['cel_gsc_client_id'])) {
-            $value = sanitize_text_field(wp_unslash($_POST['cel_gsc_client_id']));
-            $this->opts->set('cel_gsc_client_id', $value);
         }
 
         // Invalidate the Options in-memory cache so subsequent reads see new values

@@ -76,7 +76,16 @@ final class HeadManager
     {
         $html = '';
 
-        // 1. Meta description
+        // 1. Search engine verification tags (front page only — GSC / Bing / etc.
+        //    only check the home document for ownership proof).
+        $html .= $this->buildVerificationTags();
+
+        // 1b. RSS auto-discovery link. Only emitted when the theme (or another
+        //     plugin) has unhooked WordPress core's feed_links() — otherwise we
+        //     would duplicate the tag.
+        $html .= $this->buildFeedLink();
+
+        // 2. Meta description
         $desc = $this->resolveDescription();
         if ($desc !== '') {
             $html .= '<meta name="description" content="' . esc_attr($desc) . '" />' . "\n";
@@ -191,6 +200,71 @@ final class HeadManager
             $robots['max-video-preview'] = '-1';
         }
         return $robots;
+    }
+
+    // ── Search engine verification ───────────────────────────────────
+
+    /**
+     * Meta name attribute for each supported provider.
+     * Each vendor specifies a different attribute name — Google uses
+     * `google-site-verification`, Bing uses `msvalidate.01`, etc.
+     */
+    private const VERIFICATION_META_NAMES = [
+        'google'    => 'google-site-verification',
+        'bing'      => 'msvalidate.01',
+        'yandex'    => 'yandex-verification',
+        'baidu'     => 'baidu-site-verification',
+        'naver'     => 'naver-site-verification',
+        'pinterest' => 'p:domain_verify',
+    ];
+
+    private function buildVerificationTags(): string
+    {
+        if (! (is_front_page() || is_home())) {
+            return '';
+        }
+
+        $html = '';
+        foreach (self::VERIFICATION_META_NAMES as $provider => $metaName) {
+            $code = trim($this->opts->verificationCode($provider));
+            if ($code === '') {
+                continue;
+            }
+            $html .= '<meta name="' . esc_attr($metaName) . '" content="' . esc_attr($code) . '" />' . "\n";
+        }
+        return $html;
+    }
+
+    // ── RSS auto-discovery link ──────────────────────────────────────
+
+    /**
+     * Emit a <link rel="alternate" type="application/rss+xml"> tag on the
+     * front page when WordPress core's feed_links() action has been removed.
+     * Themes frequently unhook feed_links to strip unused attribute handlers,
+     * which also removes the RSS discovery signal search engines look for.
+     */
+    private function buildFeedLink(): string
+    {
+        if (! (is_front_page() || is_home())) {
+            return '';
+        }
+        if (has_action('wp_head', 'feed_links') !== false) {
+            return '';
+        }
+
+        $feedUrl = (string) get_bloginfo('rss2_url');
+        if ($feedUrl === '') {
+            return '';
+        }
+
+        $siteName = (string) get_bloginfo('name');
+        $title    = $siteName !== '' ? sprintf('%s » Feed', $siteName) : 'Feed';
+
+        return sprintf(
+            '<link rel="alternate" type="application/rss+xml" title="%s" href="%s" />' . "\n",
+            esc_attr($title),
+            esc_url($feedUrl)
+        );
     }
 
     // ── Meta Description ─────────────────────────────────────────────

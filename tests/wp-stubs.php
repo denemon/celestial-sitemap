@@ -1236,7 +1236,8 @@ function wp_send_json_error(mixed $data = null, int $statusCode = 200): void
 
 function wp_die(string $message = ''): never
 {
-    throw new \RuntimeException($message);
+    // テストでは exit を直接呼べないため、sentinel 例外に変換する。
+    throw new CelestialSitemapAjaxExit($message);
 }
 
 function apply_filters(string $hook, mixed $value, mixed ...$args): mixed
@@ -1264,10 +1265,17 @@ function home_url(string $path = ''): string
 
 function get_bloginfo(string $show = '', string $filter = 'raw'): string
 {
+    $overrides = $GLOBALS['cel_test_bloginfo'] ?? [];
+    if (array_key_exists($show, $overrides)) {
+        return (string) $overrides[$show];
+    }
+
     return match ($show) {
-        'name' => 'Example Site',
+        'name'        => 'Example Site',
         'description' => 'Example Description',
-        default => '',
+        'rss2_url'    => 'https://example.org/feed/',
+        'language'    => 'en-US',
+        default       => '',
     };
 }
 
@@ -1715,6 +1723,99 @@ if (! function_exists('mb_substr')) {
     function mb_substr(string $string, int $start, ?int $length = null, ?string $encoding = null): string
     {
         return $length === null ? substr($string, $start) : substr($string, $start, $length);
+    }
+}
+
+/**
+ * Stubs for the medium-priority feature additions (IndexNow pinger, RSS link,
+ * W3C-datetime helper). The test harness stores outgoing HTTP calls in
+ * $GLOBALS['cel_test_http_calls'] so assertions can inspect them without
+ * touching the network.
+ */
+
+function wp_date(string $format, ?int $timestamp = null, ?\DateTimeZone $timezone = null): string
+{
+    $ts = $timestamp ?? time();
+    // テストスタブは WP 設定タイムゾーンを `cel_test_timezone` GLOBAL から拾う。
+    $tz = $timezone ?? new \DateTimeZone($GLOBALS['cel_test_timezone'] ?? 'Asia/Tokyo');
+    return (new \DateTimeImmutable('@' . $ts))->setTimezone($tz)->format($format);
+}
+
+function wp_generate_password(int $length = 12, bool $special = true, bool $extra = false): string
+{
+    $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    $out   = '';
+    for ($i = 0; $i < $length; $i++) {
+        $out .= $chars[random_int(0, strlen($chars) - 1)];
+    }
+    return $out;
+}
+
+function wp_json_encode(mixed $data, int $options = 0, int $depth = 512): string|false
+{
+    return json_encode($data, $options, $depth);
+}
+
+function wp_remote_post(string $url, array $args = []): array|\WP_Error
+{
+    $GLOBALS['cel_test_http_calls'][] = [
+        'method' => 'POST',
+        'url'    => $url,
+        'args'   => $args,
+    ];
+    return ['response' => ['code' => 200, 'message' => 'OK'], 'body' => ''];
+}
+
+function wp_remote_retrieve_response_code(array|\WP_Error $response): int
+{
+    if ($response instanceof \WP_Error) {
+        return 0;
+    }
+    return (int) ($response['response']['code'] ?? 0);
+}
+
+function wp_is_post_revision(int|\stdClass $post): int|false
+{
+    $id = is_object($post) ? (int) ($post->ID ?? 0) : $post;
+    return $GLOBALS['cel_test_is_revision'][$id] ?? false;
+}
+
+function wp_is_post_autosave(int|\stdClass $post): int|false
+{
+    $id = is_object($post) ? (int) ($post->ID ?? 0) : $post;
+    return $GLOBALS['cel_test_is_autosave'][$id] ?? false;
+}
+
+function has_action(string $hook, callable|string|false $callback = false): bool|int
+{
+    if (! isset($GLOBALS['cel_wp_actions'][$hook])) {
+        return false;
+    }
+    if ($callback === false) {
+        return 10; // default priority — any action registered
+    }
+    foreach ($GLOBALS['cel_wp_actions'][$hook] as $priority => $callbacks) {
+        foreach ($callbacks as [$cb]) {
+            if ($cb === $callback) {
+                return (int) $priority;
+            }
+        }
+    }
+    return false;
+}
+
+if (! function_exists('get_post_types')) {
+    function get_post_types(array $args = [], string $output = 'names'): array
+    {
+        $all = $GLOBALS['cel_test_registered_post_types'] ?? [];
+        if ($output === 'names') {
+            return array_combine($all, $all);
+        }
+        $objects = [];
+        foreach ($all as $name) {
+            $objects[$name] = (object) ['name' => $name, 'public' => true, 'labels' => (object) ['name' => $name]];
+        }
+        return $objects;
     }
 }
 

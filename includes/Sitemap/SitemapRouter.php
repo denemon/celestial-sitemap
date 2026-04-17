@@ -464,7 +464,7 @@ final class SitemapRouter
             'recent',
             fn() => $this->buildRecentSitemap(),
             \home_url('/sitemap-recent.xml'),
-            \gmdate('c')
+            $this->formatLastmod(null)
         );
 
         foreach ($this->opts->sitemapPostTypes() as $pt) {
@@ -499,7 +499,7 @@ final class SitemapRouter
                     "{$tax}_p{$i}",
                     fn() => $this->buildSitemap($tax, $i),
                     \home_url("/cel-sitemap-{$slug}.xml"),
-                    \gmdate('c')
+                    $this->formatLastmod(null)
                 );
             }
         }
@@ -508,7 +508,7 @@ final class SitemapRouter
         // discover it even when no articles were published in the last 48 h.
         $entries[] = [
             'loc'     => \home_url('/cel-sitemap-news.xml'),
-            'lastmod' => \gmdate('c'),
+            'lastmod' => $this->formatLastmod(null),
         ];
 
         // Image sitemap (posts with featured images)
@@ -522,7 +522,7 @@ final class SitemapRouter
                     "image_p{$i}",
                     fn() => $this->buildImageSitemap($i),
                     \home_url("/cel-sitemap-{$slug}.xml"),
-                    \gmdate('c')
+                    $this->formatLastmod(null)
                 );
             }
         }
@@ -538,7 +538,7 @@ final class SitemapRouter
                     "video_p{$i}",
                     fn() => $this->buildVideoSitemap($i),
                     \home_url("/cel-sitemap-{$slug}.xml"),
-                    \gmdate('c')
+                    $this->formatLastmod(null)
                 );
             }
         }
@@ -909,7 +909,7 @@ final class SitemapRouter
             }
 
             $timestamp = \strtotime($post->post_modified_gmt);
-            $lastmod   = $timestamp ? \gmdate('c', $timestamp) : \gmdate('c');
+            $lastmod   = $this->formatLastmod($timestamp === false ? null : $timestamp);
 
             $images = [];
             if (isset($thumbnailMap[$id])) {
@@ -1077,7 +1077,7 @@ final class SitemapRouter
             }
 
             $pubTimestamp = \strtotime($post->post_date_gmt);
-            $pubDate      = $pubTimestamp ? \gmdate('c', $pubTimestamp) : \gmdate('c');
+            $pubDate      = $this->formatLastmod($pubTimestamp === false ? null : $pubTimestamp);
 
             $images = [];
             if (isset($thumbnailMap[$id])) {
@@ -1163,7 +1163,7 @@ final class SitemapRouter
             }
 
             $pubTimestamp = \strtotime($post->post_date_gmt);
-            $pubDate      = $pubTimestamp ? \gmdate('c', $pubTimestamp) : \gmdate('c');
+            $pubDate      = $this->formatLastmod($pubTimestamp === false ? null : $pubTimestamp);
 
             $excerpt = \get_post_meta($id, '_cel_description', true);
             if (! $excerpt || $excerpt === '') {
@@ -1381,7 +1381,7 @@ final class SitemapRouter
             $timestamp = \strtotime($post->post_modified_gmt ?? '');
             $entries[] = [
                 'loc'     => $permalink,
-                'lastmod' => $timestamp ? \gmdate('c', $timestamp) : \gmdate('c'),
+                'lastmod' => $this->formatLastmod($timestamp === false ? null : $timestamp),
                 'title'   => \get_the_title($post),
             ];
         }
@@ -1623,7 +1623,12 @@ final class SitemapRouter
             $pt
         ));
         $timestamp = $ts ? \strtotime($ts) : false;
-        return $timestamp ? \gmdate('c', $timestamp) : \gmdate('c');
+        return $this->formatLastmod($timestamp === false ? null : $timestamp);
+    }
+
+    private function formatLastmod(?int $timestamp): string
+    {
+        return \wp_date('c', $timestamp ?? \time());
     }
 
     /**

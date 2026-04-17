@@ -96,6 +96,12 @@ abstract class CelestialSitemap_TestCase extends WP_UnitTestCase
         $GLOBALS['cel_test_registered_post_types'] = [];
         $GLOBALS['cel_last_json_response'] = null;
         $GLOBALS['cel_last_status_header'] = null;
+        $GLOBALS['cel_test_http_calls'] = [];
+        $GLOBALS['cel_test_is_revision'] = [];
+        $GLOBALS['cel_test_is_autosave'] = [];
+        $GLOBALS['cel_test_bloginfo'] = [];
+        $GLOBALS['cel_test_timezone'] = 'Asia/Tokyo';
+        $GLOBALS['cel_wp_actions'] = [];
         $_POST = [];
 
         wp_cache_flush();

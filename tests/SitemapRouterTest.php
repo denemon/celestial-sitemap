@@ -228,6 +228,54 @@ final class SitemapRouterTest extends CelestialSitemap_TestCase
         $this->assertStringContainsString('Categories', $html);
     }
 
+    public function test_format_lastmod_emits_site_timezone_offset_for_given_timestamp(): void
+    {
+        $GLOBALS['cel_test_timezone'] = 'Asia/Tokyo';
+
+        // 2026-04-01 09:00:00 JST = 2026-04-01 00:00:00 UTC
+        $timestamp = \gmmktime(0, 0, 0, 4, 1, 2026);
+
+        $lastmod = $this->invokePrivateMethod($this->router, 'formatLastmod', [$timestamp]);
+
+        $this->assertIsString($lastmod);
+        $this->assertSame('2026-04-01T09:00:00+09:00', $lastmod);
+    }
+
+    public function test_format_lastmod_falls_back_to_current_time_when_timestamp_is_null(): void
+    {
+        $GLOBALS['cel_test_timezone'] = 'Asia/Tokyo';
+
+        $lastmod = $this->invokePrivateMethod($this->router, 'formatLastmod', [null]);
+
+        // W3C datetime with JST offset.
+        $this->assertMatchesRegularExpression(
+            '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+09:00$/',
+            (string) $lastmod
+        );
+    }
+
+    public function test_build_index_uses_site_timezone_for_lastmod_values(): void
+    {
+        $GLOBALS['cel_test_timezone'] = 'Asia/Tokyo';
+        $this->options->set('cel_sitemap_post_types', ['post']);
+
+        $GLOBALS['cel_test_posts'][101] = (object) [
+            'ID'                => 101,
+            'post_type'         => 'post',
+            'post_status'       => 'publish',
+            'post_modified_gmt' => \gmdate('Y-m-d H:i:s', time() - DAY_IN_SECONDS),
+            'post_title'        => 'Fresh Post',
+            'permalink'         => 'https://example.org/fresh-post/',
+        ];
+
+        $xml = $this->invokePrivateMethod($this->router, 'buildIndex');
+
+        // サイトのタイムゾーン（JST）のオフセットが lastmod に含まれること。
+        $this->assertMatchesRegularExpression('/<lastmod>[^<]+\+09:00<\/lastmod>/', $xml);
+        // 旧実装のような Z サフィックス（UTC）は出力しない。
+        $this->assertStringNotContainsString('Z</lastmod>', $xml);
+    }
+
     public function test_render_discovery_links_is_limited_to_hub_pages(): void
     {
         $GLOBALS['cel_test_conditionals']['is_front_page'] = true;

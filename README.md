@@ -1,4 +1,4 @@
-# Celestial Sitemap v3.6.3
+# Celestial Sitemap v3.7.1
 
 Enterprise-grade WordPress SEO plugin.
 
@@ -64,6 +64,8 @@ celestial-sitemap/
 │   │   └── SchemaManager.php      # Article, WebPage (all CPTs), BreadcrumbList, Organization
 │   ├── Sitemap/
 │   │   └── SitemapRouter.php      # XML sitemaps, XSL, caching, invalidation
+│   ├── Indexing/
+│   │   └── IndexNowPinger.php     # IndexNow ping-on-publish (Bing/Yandex/Naver/Seznam)
 │   └── Redirect/
 │       └── RedirectManager.php    # 301/302/307/308 redirect engine
 ├── templates/
@@ -90,6 +92,7 @@ Plugin (singleton)
  ├── HeadManager ←────────────┤ (unified head builder, receives CanonicalManager + SchemaManager)
  ├── RobotsManager ←──────────┤
  ├── SitemapRouter ←──────────┤
+ ├── IndexNowPinger ←─────────┤ (reads/writes cel_indexnow_key)
  ├── RedirectManager          │ (standalone, no Options dep)
  ├── NotFoundLogger           │ (standalone)
  └── [admin only]             │
@@ -132,12 +135,16 @@ HeadManager orchestrates CanonicalManager and SchemaManager — they no longer h
 | `admin_notices`             | `ConflictDetector::maybeShowNotice` | 10       |
 | `query_vars`                | `SitemapRouter::addQueryVars`       | 10       |
 | `cel_pregenerate_sitemaps`  | `SitemapRouter::pregenerateSitemaps`| 10       |
+| `init`                      | `IndexNowPinger::registerRewrite`   | 10       |
+| `query_vars`                | `IndexNowPinger::addQueryVars`      | 10       |
+| `template_redirect`         | `IndexNowPinger::maybeServeKeyFile` | 1        |
+| `transition_post_status`    | `IndexNowPinger::handleTransition`  | 10       |
 | `{$taxonomy}_add_form_fields`  | `TaxonomyFields::renderAddFields`  | 10    |
 | `{$taxonomy}_edit_form_fields` | `TaxonomyFields::renderEditFields` | 10    |
 | `created_{$taxonomy}`       | `TaxonomyFields::saveFields`        | 10       |
 | `edited_{$taxonomy}`        | `TaxonomyFields::saveFields`        | 10       |
 
-Total: 30 hook registrations.
+Total: 34 hook registrations.
 
 **Unified head builder flow:**
 1. `HeadManager::collect()` at `template_redirect` (priority 10) — resolves description, canonical, OGP, schema in a single pass
@@ -201,9 +208,9 @@ add_filter('cel_canonical_url', function (string $url): string {
 - `{prefix}cel_404_log` — 404 error log (deduped by URL)
 
 **Options:**
-- `cel_*` — all prefixed, ~26 options
-- Frequently-read options (title, noindex, schema, OGP flags) are `autoload=true`
-- Infrequently-read options (GSC credentials, sitemap lists) are `autoload=false`
+- `cel_*` — all prefixed, ~28 options
+- Frequently-read options (title, noindex, schema, OGP flags, verification codes) are `autoload=true`
+- Infrequently-read options (sitemap lists, robots.txt content, IndexNow key, 404 caps) are `autoload=false`
 - All options are bulk-loaded in a single query on first access via `Options::loadAll()`
 
 **Post Meta:**
@@ -217,6 +224,7 @@ add_filter('cel_canonical_url', function (string $url): string {
 - `cel_redirect_compiled` — compiled redirect map (exact/prefix/regex, 1 hour TTL, ≤10,000 entries)
 - `cel_404_rate_count` — 404 rate limiter counter (60s window)
 - `cel_404_row_count` — 404 table row count cache (5 min TTL)
+- `cel_indexnow_ping_{md5(url)}` — IndexNow per-URL debounce flag (60s TTL)
 
 **File Cache:**
 - `wp-content/cache/cel-sitemaps/{blog_id}/` — pre-generated sitemap XML files (multisite-safe, per-site subdirectory)
@@ -248,12 +256,16 @@ This ensures paginated pages are not incorrectly canonicalized to page 1.
 
 On admin pages, the plugin checks for:
 
-| Plugin        | Detection Method                                  |
-|---------------|---------------------------------------------------|
-| Yoast SEO     | `defined('WPSEO_VERSION')` or `class_exists('WPSEO_Options')` |
-| Rank Math     | `defined('RANK_MATH_VERSION')` or `class_exists('RankMath')` |
-| All in One SEO| `defined('AIOSEO_VERSION')` or `function_exists('aioseo')` |
-| SEOPress      | `defined('SEOPRESS_VERSION')` or `function_exists('seopress_init')` |
+| Plugin            | Detection Method                                  |
+|-------------------|---------------------------------------------------|
+| Yoast SEO         | `defined('WPSEO_VERSION')` or `class_exists('WPSEO_Options')` |
+| Rank Math         | `defined('RANK_MATH_VERSION')` or `class_exists('RankMath')` |
+| All in One SEO    | `defined('AIOSEO_VERSION')` or `function_exists('aioseo')` |
+| SEOPress          | `defined('SEOPRESS_VERSION')` or `function_exists('seopress_init')` |
+| Google XML Sitemaps | `defined('SM_VERSION')` or `class_exists('GoogleSitemapGenerator')` |
+| XML Sitemap & Google News | `class_exists('XMLSF_Sitemaps')` |
+| Jetpack Sitemaps  | `Jetpack::is_module_active('sitemaps')` |
+| Google Site Kit   | `defined('GOOGLESITEKIT_VERSION')` or `class_exists('Google\\Site_Kit\\Plugin')` |
 
 If detected, a warning notice is displayed. The plugin does **not** automatically deactivate
 competing plugins or remove their hooks.
@@ -291,10 +303,10 @@ The full schema array can be further customized via `cel_schema_webpage`.
 6. **SQL injection prevention** — all queries via `$wpdb->prepare()`
 7. **XSS prevention** — no raw `$_GET`/`$_POST` in output; all escaped
 8. **CSRF prevention** — nonce on all forms and AJAX
-9. **Credential encryption** — GSC client secret and access token encrypted via AES-256-CBC with random IV and `wp_salt()`-derived key
-10. **Password-protected content** — meta descriptions not auto-generated for password-protected posts
-11. **Options key whitelist** — `Options::set()` only accepts known `cel_*` keys
-12. **404 rate limiting** — prevents attackers from flooding the database with unique 404 URLs
+9. **Password-protected content** — meta descriptions not auto-generated for password-protected posts
+10. **Options key whitelist** — `Options::set()` only accepts known `cel_*` keys
+11. **404 rate limiting** — prevents attackers from flooding the database with unique 404 URLs
+12. **IndexNow key isolation** — per-site random 32-char key served only from `/cel-indexnow-key.txt` with `X-Robots-Tag: noindex`
 
 ## Performance Design
 
@@ -317,6 +329,66 @@ The full schema array can be further customized via `cel_schema_webpage`.
 15. **WP core sitemaps disabled** — prevents duplicate sitemap systems
 
 ## Changelog
+
+### 3.7.1
+
+**Low-effort / high-impact follow-ups on top of 3.7.0:**
+- **Conflict detection extended to Google Site Kit** — Site Kit's Search Console module emits its own `<link rel="canonical">` and `<meta name="robots">` on connected pages, which visibly duplicate Celestial Sitemap's output in the rendered `<head>`. `ConflictDetector::detectConflicts()` now flags `defined('GOOGLESITEKIT_VERSION')` (or `Google\Site_Kit\Plugin` class) and includes "Google Site Kit" in the admin notice alongside existing SEO plugin detections (`includes/Admin/ConflictDetector.php`)
+- **GSC-era encryption helpers actually removed** — The 3.7.0 release notes announced the removal of the AES-256-CBC helpers along with the GSC OAuth scaffolding, but the `Options::encrypt()`, `Options::decrypt()`, and `CIPHER_ALGO` constant were left in place (no remaining callers). They have now been deleted alongside their round-trip test, finishing the dead-code cleanup claimed by 3.7.0 (`includes/Core/Options.php`, `tests/OptionsTest.php`)
+
+**Test Coverage:**
+- `tests/ConflictDetectorTest.php` (new) — 2 cases: empty baseline in a clean environment and Site Kit detection when `GOOGLESITEKIT_VERSION` is defined
+
+**Files changed:**
+- `celestial-sitemap.php` — version bump to 3.7.1
+- `includes/Admin/ConflictDetector.php` — Site Kit entry added to docblock and `detectConflicts()`
+- `includes/Core/Options.php` — deleted `encrypt()`, `decrypt()`, `CIPHER_ALGO`
+- `tests/OptionsTest.php` — removed `test_encrypt_and_decrypt_support_plaintext_and_round_trip`
+- `tests/ConflictDetectorTest.php` — new characterization tests
+- `README.md` — Competing SEO Plugin Detection table expanded to list all detected integrations
+
+### 3.7.0
+
+**New Features — IndexNow, search engine verification, timezone-aware sitemaps:**
+- **IndexNow ping-on-publish** — On every `draft → publish` transition, the plugin notifies Bing, Yandex, Naver, and Seznam via the IndexNow protocol (Google does not participate). A per-site 32-character key is generated lazily on first dashboard view, persisted as `cel_indexnow_key`, and served at the fixed verification URL `/cel-indexnow-key.txt`. Requests are non-blocking (`blocking => false`, 2s timeout) and deduplicated per URL via a 60-second transient debounce. Revisions, autosaves, posts marked `_cel_noindex = 1`, and non-public post types are skipped (`includes/Indexing/IndexNowPinger.php`)
+- **Search engine verification meta tags** — Admin-configurable verification codes for Google Search Console, Bing Webmaster Tools, Yandex, Baidu, Naver, and Pinterest. Each provider's vendor-specific `<meta name="…">` tag is emitted on the front page only, with values run through `esc_attr()` to prevent attribute-boundary escapes (`includes/SEO/HeadManager.php`, `includes/Core/Options.php`, `templates/admin/dashboard.php`)
+- **Site-timezone lastmod** — XML sitemap `<lastmod>` values now use the site's configured timezone (e.g. `+09:00` for Asia/Tokyo) instead of UTC (`Z`). A new `SitemapRouter::formatLastmod(?int)` helper replaces all 10 `gmdate('c')` call sites across index, recent, news, image, video, taxonomy, post-type, and hub sitemaps (`includes/Sitemap/SitemapRouter.php`)
+- **RSS auto-discovery link** — `<link rel="alternate" type="application/rss+xml">` is emitted on the front page when the theme or another plugin has unhooked WordPress core's `feed_links()`, preventing the discovery signal from being lost without duplicating it (`includes/SEO/HeadManager.php`)
+
+**Dashboard UI:**
+- **"Submit to Search Console" sub-section** — one-click-copy sitemap URL with deep links to Google Search Console and Bing Webmaster Tools (`templates/admin/dashboard.php`)
+- **"Search Engine Verification" card** — input fields for all six verification providers with per-provider output examples (`templates/admin/dashboard.php`)
+- **IndexNow read-only panel** — displays the generated site key and the key file URL, both select-on-focus for easy copying (`templates/admin/dashboard.php`)
+
+**Removals (dead code):**
+- Removed the unused Google Search Console OAuth2 scaffolding (`cel_gsc_client_id`, `cel_gsc_client_secret`, `cel_gsc_access_token`, `cel_gsc_refresh_token`, AES-256-CBC encryption helpers, dashboard fields). The integration was never wired and Google Search Console submission remains manual (`includes/Core/Options.php`, `includes/Core/Activator.php`, `includes/Admin/AdminController.php`, `templates/admin/dashboard.php`)
+
+**New Options:**
+- `cel_verify_google`, `cel_verify_bing`, `cel_verify_yandex`, `cel_verify_baidu`, `cel_verify_naver`, `cel_verify_pinterest` (string, default: '', autoload) — verification codes per provider
+
+**New Rewrite Rule:**
+- `^cel-indexnow-key\.txt/?$` → `index.php?cel_indexnow_key=1` (Migrator flushes on upgrade via `cel_flush_rewrite_rules` flag)
+
+**Test Coverage:**
+- `tests/IndexNowPingerTest.php` — 8 cases covering key generation/persistence, key file serving, publish-edge triggering, revision/autosave/noindex/empty-key guards, and URL debounce
+- `tests/SeoManagersTest.php` — verification tag emission on front page, skip on non-front, XSS escape; RSS alternate link emission/suppression/escaping
+- `tests/SitemapRouterTest.php` — `formatLastmod` timezone offset and null-timestamp fallback, `buildIndex` site-timezone lastmod
+- `tests/wp-stubs.php` — new stubs for `wp_date`, `wp_generate_password`, `wp_remote_post`, `wp_json_encode`, `wp_is_post_revision`, `wp_is_post_autosave`, `has_action`, and extended `get_bloginfo`
+
+**Files Added:**
+- `includes/Indexing/IndexNowPinger.php`
+- `tests/IndexNowPingerTest.php`
+
+**Files Modified:**
+- `celestial-sitemap.php` — version bump to 3.7.0
+- `includes/Plugin.php` — wires `IndexNowPinger`
+- `includes/Core/Activator.php` — verification option defaults, IndexNow rewrite rule, removed GSC defaults
+- `includes/Core/Options.php` — `VERIFICATION_PROVIDERS` constant, `verificationCode()`, `indexNowKey()`; removed GSC accessors and encryption
+- `includes/SEO/HeadManager.php` — `buildVerificationTags()`, `buildFeedLink()`
+- `includes/Sitemap/SitemapRouter.php` — `formatLastmod()` helper replaces all `gmdate('c')` sites
+- `includes/Admin/AdminController.php` — verification code save loop, dashboard ensures IndexNow key on render, removed GSC encryption
+- `templates/admin/dashboard.php` — Submit-to-Search-Console sub-section, Verification card, IndexNow panel
+- `tests/TestCase.php` — resets IndexNow/verification globals between tests
 
 ### 3.6.3
 
@@ -611,9 +683,8 @@ The full schema array can be further customized via `cel_schema_webpage`.
 
 ## Known Limitations / Planned Improvements
 
-1. **GSC API integration** — designed (Options ready) but not connected; requires OAuth2 flow
-2. **Internal link analysis** — requires content parsing; planned as background cron job
-3. **IndexNow** — key generation designed but ping-on-publish not yet wired
-4. **WooCommerce** — product schema not implemented (use `cel_schema_type` filter with `'Product'`)
-5. **Multilingual (WPML/Polylang)** — hreflang sitemap extension not yet active
-6. **Bulk editor** — per-post SEO fields editable only in post editor, not quick-edit
+1. **Internal link analysis** — requires content parsing; planned as background cron job
+2. **WooCommerce** — product schema not implemented (use `cel_schema_type` filter with `'Product'`)
+3. **Multilingual (WPML/Polylang)** — hreflang sitemap extension not yet active
+4. **Bulk editor** — per-post SEO fields editable only in post editor, not quick-edit
+5. **Google Search Console API** — Google does not participate in IndexNow; GSC submission remains manual (via the Dashboard's "Submit to Search Console" URL)

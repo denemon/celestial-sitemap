@@ -74,35 +74,25 @@ final class OptionsTest extends CelestialSitemap_TestCase
         $options->set('cel_unknown_key', 'value');
     }
 
-    public function test_gsc_accessors_decrypt_encrypted_values(): void
+    public function test_verification_accessors_return_defaults_and_stored_values(): void
     {
-        if (! function_exists('openssl_encrypt')) {
-            $this->markTestSkipped('openssl extension is required for encryption tests.');
-        }
-
-        update_option('cel_gsc_client_secret', Options::encrypt('client-secret'));
-        update_option('cel_gsc_access_token', Options::encrypt('access-token'));
-
         $options = new Options();
 
-        // getter が保存済み暗号文を平文へ戻して返すことを確認する。
-        $this->assertSame('client-secret', $options->gscClientSecret());
-        $this->assertSame('access-token', $options->gscAccessToken());
-    }
+        // 未設定時は空文字が返る。
+        $this->assertSame('', $options->verificationCode('google'));
+        $this->assertSame('', $options->verificationCode('bing'));
+        $this->assertSame('', $options->verificationCode('yandex'));
+        $this->assertSame('', $options->verificationCode('baidu'));
+        $this->assertSame('', $options->verificationCode('naver'));
+        $this->assertSame('', $options->verificationCode('pinterest'));
 
-    public function test_encrypt_and_decrypt_support_plaintext_and_round_trip(): void
-    {
-        if (! function_exists('openssl_encrypt')) {
-            $this->markTestSkipped('openssl extension is required for encryption tests.');
-        }
+        // allowed key へ保存した値が getter から返る。
+        $options->set('cel_verify_google', 'g-abc123');
+        $options->set('cel_verify_bing', 'b-xyz789');
+        $this->assertSame('g-abc123', $options->verificationCode('google'));
+        $this->assertSame('b-xyz789', $options->verificationCode('bing'));
 
-        $ciphertext = Options::encrypt('plain-value');
-
-        // 暗号化した値は enc: 形式になり、復号で元に戻る。
-        $this->assertStringStartsWith('enc:', $ciphertext);
-        $this->assertSame('plain-value', Options::decrypt($ciphertext));
-
-        // 既存の平文値は後方互換のためそのまま返す。
-        $this->assertSame('legacy-plain', Options::decrypt('legacy-plain'));
+        // 未知プロバイダは空文字で安全に返す。
+        $this->assertSame('', $options->verificationCode('unknown'));
     }
 }

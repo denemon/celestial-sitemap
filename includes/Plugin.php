@@ -9,6 +9,7 @@ use CelestialSitemap\Admin\ConflictDetector;
 use CelestialSitemap\Admin\TaxonomyFields;
 use CelestialSitemap\Core\Migrator;
 use CelestialSitemap\Core\Options;
+use CelestialSitemap\Indexing\IndexNowPinger;
 use CelestialSitemap\SEO\HeadManager;
 use CelestialSitemap\SEO\CanonicalManager;
 use CelestialSitemap\SEO\RobotsManager;
@@ -33,6 +34,7 @@ final class Plugin
     private SitemapRouter     $sitemap;
     private RedirectManager   $redirects;
     private NotFoundLogger    $notFoundLogger;
+    private IndexNowPinger    $indexNow;
 
     private function __construct()
     {
@@ -67,6 +69,7 @@ final class Plugin
         $this->sitemap        = new SitemapRouter($this->options);
         $this->redirects      = new RedirectManager();
         $this->notFoundLogger = new NotFoundLogger();
+        $this->indexNow       = new IndexNowPinger($this->options);
 
         // CanonicalManager: only removes WP default rel_canonical.
         // Its output is now handled by HeadManager (unified head builder).
@@ -86,6 +89,7 @@ final class Plugin
         $this->sitemap->register();
         $this->redirects->register();
         $this->notFoundLogger->register();
+        $this->indexNow->register();
 
         if (is_admin()) {
             (new AdminController($this->options))->register();
